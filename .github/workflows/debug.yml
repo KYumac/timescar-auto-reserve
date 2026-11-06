@@ -12,10 +12,9 @@ jobs:
           with sync_playwright() as p:
               b = p.chromium.launch(headless=True)
               pg = b.new_page(locale="ja-JP")
-              pg.goto("https://share.timescar.jp/view/member/mypage.jsp", wait_until="networkidle")
-              print("URL", pg.url)
-              for f in pg.frames: print("FRAME", f.url)
-              print(pg.evaluate("""() => JSON.stringify([...document.querySelectorAll('input,button,a[onclick]')].map(e=>({t:e.tagName,type:e.type,name:e.name,id:e.id,ml:e.maxLength,vis:!!e.offsetParent,alt:e.alt,val:e.type==='password'?'':(e.value||'').slice(0,20),oc:(e.getAttribute('onclick')||'').slice(0,60)})))"""))
-              print(pg.evaluate("() => [...document.forms].map(f=>f.id+' '+f.action).join('\\n')"))
+              r = pg.goto("https://share.timescar.jp/view/member/mypage.jsp", wait_until="networkidle")
+              print("STATUS", r.status if r else None, pg.url)
+              print("TITLE", pg.title())
+              print("TEXT", pg.inner_text("body")[:600].replace("\n"," / "))
               b.close()
           PY
