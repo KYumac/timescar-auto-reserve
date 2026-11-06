@@ -1,0 +1,45 @@
+name: iPhoneからの操作を受け取る
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # 5分おきに ntfy のコマンド用トピックを確認
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "直接実行する操作（例: test / status / keep 235087417 / reserve 2026-11-25 10:00 15:00）"
+        required: false
+
+concurrency:
+  group: timescar-poll
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TIMES_ID: ${{ secrets.TIMES_ID }}
+      TIMES_PW: ${{ secrets.TIMES_PW }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q PyYAML==6.0.2
+      - name: 手動実行の操作をコマンド用トピックへ送る
+        if: github.event_name == 'workflow_dispatch' && inputs.command != ''
+        run: curl -s -d "${{ inputs.command }}" "https://ntfy.sh/${NTFY_TOPIC}-cmd" > /dev/null && sleep 2
+      - name: 未処理の操作があるか確認
+        id: check
+        run: python src/main.py poll --check
+      - uses: ./.github/actions/setup
+        if: steps.check.outputs.pending == 'true'
+      - name: 操作を実行
+        if: steps.check.outputs.pending == 'true'
+        run: python src/main.py poll
+      - uses: ./.github/actions/save-state
+        if: always()

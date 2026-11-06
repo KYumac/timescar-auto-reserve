@@ -13,7 +13,7 @@ on:
         default: remind
 
 concurrency:
-  group: timescar
+  group: timescar-daily
   cancel-in-progress: false
 
 permissions:
@@ -31,7 +31,6 @@ jobs:
           TIMES_ID: ${{ secrets.TIMES_ID }}
           TIMES_PW: ${{ secrets.TIMES_PW }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TASK="${{ inputs.task }}"

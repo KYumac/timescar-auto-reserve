@@ -18,7 +18,6 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
-from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import notify  # noqa: E402
@@ -45,6 +44,7 @@ def fmt_day(d: date) -> str:
 
 class Session:
     def __enter__(self):
+        from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         self.browser = self._pw.chromium.launch(headless=True)
         ctx = self.browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo")
@@ -166,6 +166,7 @@ def cmd_remind(args) -> None:
 
 
 def cmd_auto_cancel(args) -> None:
+    run_commands()  # 直前に押された「使う」を先に反映する
     today = now().date().isoformat()
     state = st.load()
     targets = [(n, r) for n, r in state["reservations"].items()
@@ -246,7 +247,55 @@ def cmd_test(args) -> None:
     with Session() as page:
         live = tc.list_reservations(page)
     notify.send("タイムズカー：接続テスト成功",
-                f"ログインできました。現在の予約 {len(live)} 件。", tags=["white_check_mark"])
+                f"ログインできました。現在の予約 {len(live)} 件。\n"
+                "この通知をタップすると操作パネルが開きます。ホーム画面に追加しておくと便利です。",
+                tags=["white_check_mark"])
+
+
+# ---------------------------------------------------------------- iPhoneからのコマンド（ntfy経由）
+
+def pending_commands() -> list[dict]:
+    state = st.load()
+    return notify.fetch_commands(state.get("cmd_since"))
+
+
+def run_commands() -> int:
+    """コマンド用トピックに届いた操作を順に実行する。実行件数を返す"""
+    from types import SimpleNamespace as NS
+    msgs = pending_commands()
+    for m in msgs:
+        parts = (m.get("message") or "").split()
+        print(f"[command] {parts}")
+        try:
+            if len(parts) == 2 and parts[0] in ("keep", "cancel"):
+                (cmd_keep if parts[0] == "keep" else cmd_cancel)(NS(number=parts[1]))
+            elif len(parts) == 4 and parts[0] == "reserve":
+                cmd_reserve(NS(date=parts[1], start=parts[2], end=parts[3], wait_open=False))
+            elif parts == ["status"]:
+                cmd_status(NS())
+            elif parts == ["test"]:
+                cmd_test(NS())
+            else:
+                print(f"[command] 不明な操作: {parts}")
+        except Exception as e:  # 1件失敗しても残りは続ける
+            notify.send("タイムズカー：エラー", f"{' '.join(parts)}: {e}"[:500], priority=4, tags=["x"])
+        # 処理済みの位置を記録（同じ操作を二重に実行しない）
+        state = st.load()
+        state["cmd_since"] = m["id"]
+        st.save(state)
+    return len(msgs)
+
+
+def cmd_poll(args) -> None:
+    if args.check:
+        has = bool(pending_commands())
+        print(f"pending={'true' if has else 'false'}")
+        out = os.environ.get("GITHUB_OUTPUT")
+        if out:
+            with open(out, "a") as f:
+                f.write(f"pending={'true' if has else 'false'}\n")
+        return
+    run_commands()
 
 
 def main():
@@ -265,11 +314,14 @@ def main():
     c.add_argument("number")
     sub.add_parser("status")
     sub.add_parser("test")
+    pl = sub.add_parser("poll")
+    pl.add_argument("--check", action="store_true")
     args = p.parse_args()
     try:
         {
             "reserve": cmd_reserve, "remind": cmd_remind, "auto-cancel": cmd_auto_cancel,
             "keep": cmd_keep, "cancel": cmd_cancel, "status": cmd_status, "test": cmd_test,
+            "poll": cmd_poll,
         }[args.cmd](args)
     except Exception as e:
         notify.send("タイムズカー：エラー", f"{args.cmd}: {e}"[:500], priority=4, tags=["x"])

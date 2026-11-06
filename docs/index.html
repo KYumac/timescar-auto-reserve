@@ -42,15 +42,13 @@
 
 <section id="setup" style="display:none">
   <h2>初回設定</h2>
-  <label>GitHubのアクセストークン（この端末にだけ保存）</label>
-  <input id="tok" type="password" autocomplete="off" placeholder="github_pat_...">
-  <div class="row"><button class="primary" onclick="saveTok()">保存</button></div>
+  <p class="empty">ntfyに届いた「接続テスト成功」の通知をタップして、このページを開き直してください。</p>
 </section>
 
 <section>
   <h2>予約中</h2>
   <div id="list"><p class="empty">読み込み中…</p></div>
-  <div class="row"><button onclick="dispatch('status',{})">サイトと照合して通知</button></div>
+  <div class="row"><button onclick="send('status')">サイトと照合して通知</button></div>
 </section>
 
 <section>
@@ -64,37 +62,42 @@
 </section>
 
 <details><summary>設定</summary>
-  <div class="row"><button onclick="dispatch('test',{})">接続テスト</button><button onclick="resetTok()">トークンを消す</button></div>
+  <div class="row"><button onclick="send('test')">接続テスト</button></div>
 </details>
 
 <div id="msg"></div>
 
 <script>
 const REPO = "KYumac/timescar-auto-reserve";
-const API = "https://api.github.com/repos/" + REPO;
 const WD = "日月火水木金土";
-let tok = null;
-try { tok = localStorage.getItem("gh_pat"); } catch (e) {}
+let topic = null;
+const m = location.hash.match(/t=([\w-]+)/);
+try {
+  if (m) { localStorage.setItem("cmd_topic", m[1]); history.replaceState(null, "", location.pathname); }
+  topic = localStorage.getItem("cmd_topic");
+} catch (e) { topic = m ? m[1] : null; }
 
-function toast(t){const m=document.getElementById("msg");m.textContent=t;m.style.display="block";clearTimeout(m._t);m._t=setTimeout(()=>m.style.display="none",3500)}
-function saveTok(){tok=document.getElementById("tok").value.trim();try{localStorage.setItem("gh_pat",tok)}catch(e){}document.getElementById("setup").style.display="none";load()}
-function resetTok(){try{localStorage.removeItem("gh_pat")}catch(e){}tok=null;document.getElementById("setup").style.display="block"}
-function hdr(){return {"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json"}}
+function toast(t){const el=document.getElementById("msg");el.textContent=t;el.style.display="block";clearTimeout(el._t);el._t=setTimeout(()=>el.style.display="none",4000)}
 
-async function dispatch(event, payload){
-  if(!tok){resetTok();return}
-  const r = await fetch(API+"/dispatches",{method:"POST",headers:hdr(),body:JSON.stringify({event_type:event,client_payload:payload})});
-  toast(r.status===204 ? "受け付けました。1〜2分で通知が届きます" : "失敗しました（"+r.status+"）");
+async function send(cmd){
+  if(!topic){document.getElementById("setup").style.display="block";return}
+  try{
+    const r = await fetch("https://ntfy.sh/"+topic,{method:"POST",body:cmd});
+    toast(r.ok ? "受け付けました。5〜10分ほどで反映され、通知が届きます" : "失敗しました（"+r.status+"）");
+  }catch(e){toast("送信できませんでした")}
 }
 
 function day(iso){const d=new Date(iso+"T00:00:00+09:00");return (d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）"}
 
 async function load(){
-  if(!tok){resetTok();return}
-  const r = await fetch(API+"/contents/state.json?ts="+Date.now(),{headers:{...hdr(),"Accept":"application/vnd.github.raw+json"}});
+  if(!topic) document.getElementById("setup").style.display="block";
   const el = document.getElementById("list");
-  if(!r.ok){el.innerHTML='<p class="empty">読み込めませんでした（'+r.status+'）</p>';return}
-  const st = await r.json();
+  let st;
+  try{
+    const r = await fetch("https://api.github.com/repos/"+REPO+"/contents/state.json?ts="+Date.now(),{headers:{"Accept":"application/vnd.github.raw+json"}});
+    if(!r.ok) throw new Error(r.status);
+    st = await r.json();
+  }catch(e){el.innerHTML='<p class="empty">読み込めませんでした</p>';return}
   const items = Object.entries(st.reservations||{}).sort((a,b)=>(a[1].date+a[1].start).localeCompare(b[1].date+b[1].start));
   if(!items.length){el.innerHTML='<p class="empty">予約はありません</p>';return}
   el.innerHTML = items.map(([n,x])=>`
@@ -103,8 +106,8 @@ async function load(){
       <div class="where">${x.station}・${x.car||""}</div>
       ${x.keep?'<span class="tag keep">使う</span>':(x.auto?'<span class="tag auto">当日朝に自動キャンセル</span>':'')}
       <div class="row">
-        ${x.keep?'':`<button class="primary" onclick="dispatch('keep',{number:'${n}'})">使う</button>`}
-        <button class="danger" onclick="if(confirm('この予約を取り消しますか？'))dispatch('cancel',{number:'${n}'})">キャンセル</button>
+        ${x.keep?'':`<button class="primary" onclick="send('keep ${n}')">使う</button>`}
+        <button class="danger" onclick="if(confirm('この予約を取り消しますか？'))send('cancel ${n}')">キャンセル</button>
       </div>
     </div>`).join("");
 }
@@ -112,7 +115,7 @@ async function load(){
 function reserve(){
   const d=document.getElementById("d").value,s=document.getElementById("s").value,e=document.getElementById("e").value;
   if(!d||!s||!e){toast("日付と時間を入れてください");return}
-  dispatch("reserve",{date:d,start:s,end:e});
+  send("reserve "+d+" "+s+" "+e);
 }
 
 (function(){const t=new Date(Date.now()+864e5);document.getElementById("d").value=t.toISOString().slice(0,10)})();

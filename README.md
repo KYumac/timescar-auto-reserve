@@ -20,8 +20,8 @@
 ## iPhoneからの操作
 
 - **通知のボタン**：ntfyアプリの通知にある「使う」「キャンセル」をタップ
-- **操作パネル**：`docs/index.html`（GitHub Pages）。予約一覧の確認・個別予約・キャンセル
-- **GitHubアプリ**：Actions → 「iPhoneからの操作」→ Run workflow
+- **操作パネル**：通知をタップすると開く（GitHub Pages）。予約一覧の確認・個別予約・キャンセル
+- 操作はntfyのコマンド用トピック（`NTFY_TOPIC` + `-cmd`）に送られ、5分おきの「iPhoneからの操作を受け取る」で実行される。GitHubのトークンは不要
 
 ## Secrets
 
@@ -30,7 +30,6 @@
 | `TIMES_ID` | タイムズカー会員番号（IC管理番号、10桁） |
 | `TIMES_PW` | タイムズカーのパスワード |
 | `NTFY_TOPIC` | ntfyのトピック名（推測されにくい文字列） |
-| `GH_PAT` | このリポジトリだけに権限を絞ったFine-grained token（Contents: Read and write） |
 
 ## 手動テスト
 

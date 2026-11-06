@@ -16,7 +16,10 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from playwright.sync_api import Page, TimeoutError as PWTimeout
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 BASE = "https://share.timescar.jp"
 MYPAGE = f"{BASE}/view/member/mypage.jsp"
