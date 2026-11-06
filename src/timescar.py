@@ -50,6 +50,9 @@ def login(page: Page, member_id: str, password: str) -> None:
     if "mypage.jsp" in page.url and "timesclub" not in page.url:
         return  # すでにログイン済み
 
+    if "Access Denied" in page.title():
+        raise TimesError("タイムズのサイトにアクセスを拒否されました（この実行環境からは使えません）")
+
     digits = re.sub(r"\D", "", member_id)
     text_inputs = page.locator("input[type=text]:visible, input[type=tel]:visible, input[type=number]:visible")
     n = text_inputs.count()

@@ -50,7 +50,11 @@ class Session:
         ctx = self.browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo")
         self.page = ctx.new_page()
         self.page.set_default_timeout(30000)
-        tc.login(self.page, os.environ["TIMES_ID"], os.environ["TIMES_PW"])
+        try:
+            tc.login(self.page, os.environ["TIMES_ID"], os.environ["TIMES_PW"])
+        except Exception:
+            self.__exit__()  # 失敗してもブラウザを必ず閉じる（次の操作が動かなくなるのを防ぐ）
+            raise
         return self.page
 
     def __exit__(self, *exc):
