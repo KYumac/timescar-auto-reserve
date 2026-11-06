@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="タイムズ予約">
+<meta name="theme-color" content="#111">
+<title>タイムズ予約</title>
+<style>
+  :root{--bg:#f4f4f2;--card:#fff;--ink:#1a1a1a;--sub:#6b6b6b;--line:#e2e2de;--accent:#e60012;--ok:#1f7a3a}
+  @media (prefers-color-scheme:dark){:root{--bg:#121212;--card:#1d1d1d;--ink:#f2f2f2;--sub:#a0a0a0;--line:#2e2e2e}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"Hiragino Sans",sans-serif;padding:env(safe-area-inset-top) 16px 40px}
+  h1{font-size:22px;margin:20px 0 4px}
+  .lead{color:var(--sub);font-size:13px;margin:0 0 16px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px}
+  h2{font-size:15px;margin:0 0 10px}
+  .res{border-top:1px solid var(--line);padding:12px 0}
+  .res:first-of-type{border-top:0;padding-top:0}
+  .when{font-weight:700;font-size:17px}
+  .where{color:var(--sub);font-size:14px}
+  .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);margin-top:4px}
+  .tag.keep{color:var(--ok);border-color:var(--ok)}
+  .tag.auto{color:var(--accent);border-color:var(--accent)}
+  .row{display:flex;gap:8px;margin-top:10px}
+  button{flex:1;font:inherit;font-weight:600;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+  button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  button.danger{color:var(--accent);border-color:var(--accent)}
+  button:disabled{opacity:.4}
+  label{display:block;font-size:13px;color:var(--sub);margin:8px 0 4px}
+  input{width:100%;font:inherit;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  .two{display:flex;gap:8px}.two>div{flex:1}
+  #msg{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:12px 14px;border-radius:12px;display:none;font-size:14px}
+  .empty{color:var(--sub);font-size:14px}
+  details summary{color:var(--sub);font-size:13px}
+</style>
+</head>
+<body>
+<h1>タイムズ予約</h1>
+<p class="lead">土日は0時に自動で予約。使わない日は当日朝に自動キャンセル。</p>
+
+<section id="setup" style="display:none">
+  <h2>初回設定</h2>
+  <label>GitHubのアクセストークン（この端末にだけ保存）</label>
+  <input id="tok" type="password" autocomplete="off" placeholder="github_pat_...">
+  <div class="row"><button class="primary" onclick="saveTok()">保存</button></div>
+</section>
+
+<section>
+  <h2>予約中</h2>
+  <div id="list"><p class="empty">読み込み中…</p></div>
+  <div class="row"><button onclick="dispatch('status',{})">サイトと照合して通知</button></div>
+</section>
+
+<section>
+  <h2>個別に予約する</h2>
+  <label>日付</label><input id="d" type="date">
+  <div class="two">
+    <div><label>開始</label><input id="s" type="time" value="09:00" step="900"></div>
+    <div><label>返却</label><input id="e" type="time" value="21:00" step="900"></div>
+  </div>
+  <div class="row"><button class="primary" onclick="reserve()">優先順に空きを探して予約</button></div>
+</section>
+
+<details><summary>設定</summary>
+  <div class="row"><button onclick="dispatch('test',{})">接続テスト</button><button onclick="resetTok()">トークンを消す</button></div>
+</details>
+
+<div id="msg"></div>
+
+<script>
+const REPO = "KYumac/timescar-auto-reserve";
+const API = "https://api.github.com/repos/" + REPO;
+const WD = "日月火水木金土";
+let tok = null;
+try { tok = localStorage.getItem("gh_pat"); } catch (e) {}
+
+function toast(t){const m=document.getElementById("msg");m.textContent=t;m.style.display="block";clearTimeout(m._t);m._t=setTimeout(()=>m.style.display="none",3500)}
+function saveTok(){tok=document.getElementById("tok").value.trim();try{localStorage.setItem("gh_pat",tok)}catch(e){}document.getElementById("setup").style.display="none";load()}
+function resetTok(){try{localStorage.removeItem("gh_pat")}catch(e){}tok=null;document.getElementById("setup").style.display="block"}
+function hdr(){return {"Authorization":"Bearer "+tok,"Accept":"application/vnd.github+json"}}
+
+async function dispatch(event, payload){
+  if(!tok){resetTok();return}
+  const r = await fetch(API+"/dispatches",{method:"POST",headers:hdr(),body:JSON.stringify({event_type:event,client_payload:payload})});
+  toast(r.status===204 ? "受け付けました。1〜2分で通知が届きます" : "失敗しました（"+r.status+"）");
+}
+
+function day(iso){const d=new Date(iso+"T00:00:00+09:00");return (d.getMonth()+1)+"/"+d.getDate()+"（"+WD[d.getDay()]+"）"}
+
+async function load(){
+  if(!tok){resetTok();return}
+  const r = await fetch(API+"/contents/state.json?ts="+Date.now(),{headers:{...hdr(),"Accept":"application/vnd.github.raw+json"}});
+  const el = document.getElementById("list");
+  if(!r.ok){el.innerHTML='<p class="empty">読み込めませんでした（'+r.status+'）</p>';return}
+  const st = await r.json();
+  const items = Object.entries(st.reservations||{}).sort((a,b)=>(a[1].date+a[1].start).localeCompare(b[1].date+b[1].start));
+  if(!items.length){el.innerHTML='<p class="empty">予約はありません</p>';return}
+  el.innerHTML = items.map(([n,x])=>`
+    <div class="res">
+      <div class="when">${day(x.date)} ${x.start}〜${x.end}</div>
+      <div class="where">${x.station}・${x.car||""}</div>
+      ${x.keep?'<span class="tag keep">使う</span>':(x.auto?'<span class="tag auto">当日朝に自動キャンセル</span>':'')}
+      <div class="row">
+        ${x.keep?'':`<button class="primary" onclick="dispatch('keep',{number:'${n}'})">使う</button>`}
+        <button class="danger" onclick="if(confirm('この予約を取り消しますか？'))dispatch('cancel',{number:'${n}'})">キャンセル</button>
+      </div>
+    </div>`).join("");
+}
+
+function reserve(){
+  const d=document.getElementById("d").value,s=document.getElementById("s").value,e=document.getElementById("e").value;
+  if(!d||!s||!e){toast("日付と時間を入れてください");return}
+  dispatch("reserve",{date:d,start:s,end:e});
+}
+
+(function(){const t=new Date(Date.now()+864e5);document.getElementById("d").value=t.toISOString().slice(0,10)})();
+load();
+</script>
+</body>
+</html>

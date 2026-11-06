@@ -1,0 +1,42 @@
+# タイムズカー自動予約の設定
+# 時刻はすべて日本時間(JST)
+
+reserve:
+  # 予約を取る曜日（0=月 ... 5=土, 6=日）
+  weekdays: [5, 6]
+  start: "09:00"
+  end: "21:00"
+  # 何日先を取るか（タイムズの予約受付は14日先まで）
+  days_ahead: 14
+  # 安心補償サービス（550円/回）
+  anshin_hosho: true
+  # 0時に枠が開くのを待つ最大時間（分）
+  open_wait_minutes: 15
+
+# ステーションの優先順位
+# tier1: 上から順番に試す
+# tier2: tier1が全滅したとき、どちらでも空いた方
+# tier3: tier2も全滅したときのみ
+stations:
+  tier1:
+    - { code: JL33, name: タイムズ東日本橋２丁目 }
+    - { code: LU89, name: Monte Luce東日本橋 }
+    - { code: CP25, name: ドミール東日本橋マンション }
+    - { code: BJ51, name: 東日本橋槇町ビル }
+  tier2:
+    - { code: QP23, name: S-Cubeビル }
+    - { code: BH77, name: リノア東日本橋 }
+  tier3:
+    - { code: EU70, name: プラウドフラット東日本橋 }
+    - { code: RL76, name: コンフォリア東日本橋 }
+    - { code: SO60, name: 東神田１丁目４ }
+    - { code: BY87, name: 日本橋浜町２丁目（Aブロック） }
+    - { code: U505, name: 日本橋浜町２丁目（Bブロック） }
+    - { code: HG08, name: ヴィークコート人形町 }
+    - { code: KK15, name: 日本橋スカイビル }
+    - { code: LL28, name: 日本橋富沢町１６名門ビル }
+    - { code: JT40, name: ヴィークブライト日本橋人形町 }
+
+# 「使う」を押さなかった予約を自動キャンセルする時刻の目安
+# （実際の実行はGitHub Actionsのスケジュールで 7:40 / 8:10 / 8:35 に試行）
+auto_cancel_deadline: "08:45"

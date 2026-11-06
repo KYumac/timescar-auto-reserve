@@ -1,0 +1,13 @@
+name: setup
+description: Python と Playwright(Chromium) を準備
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: pip
+    - shell: bash
+      run: |
+        pip install -r requirements.txt
+        python -m playwright install --with-deps chromium
