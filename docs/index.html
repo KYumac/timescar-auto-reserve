@@ -83,7 +83,7 @@ async function send(cmd){
   if(!topic){document.getElementById("setup").style.display="block";return}
   try{
     const r = await fetch("https://ntfy.sh/"+topic,{method:"POST",body:cmd});
-    toast(r.ok ? "受け付けました。5〜10分ほどで反映され、通知が届きます" : "失敗しました（"+r.status+"）");
+    toast(r.ok ? "受け付けました。5分以内に処理して通知します（PCが起動している必要があります）" : "失敗しました（"+r.status+"）");
   }catch(e){toast("送信できませんでした")}
 }
 
@@ -94,9 +94,11 @@ async function load(){
   const el = document.getElementById("list");
   let st;
   try{
-    const r = await fetch("https://api.github.com/repos/"+REPO+"/contents/state.json?ts="+Date.now(),{headers:{"Accept":"application/vnd.github.raw+json"}});
+    const stateTopic = topic.replace(/-cmd$/, "-state");
+    const r = await fetch("https://ntfy.sh/"+stateTopic+"/json?poll=1&since=all");
     if(!r.ok) throw new Error(r.status);
-    st = await r.json();
+    const lines = (await r.text()).trim().split("\n").filter(Boolean).map(l=>JSON.parse(l)).filter(m=>m.event==="message");
+    st = lines.length ? JSON.parse(lines[lines.length-1].message) : {reservations:{}};
   }catch(e){el.innerHTML='<p class="empty">読み込めませんでした</p>';return}
   const items = Object.entries(st.reservations||{}).sort((a,b)=>(a[1].date+a[1].start).localeCompare(b[1].date+b[1].start));
   if(!items.length){el.innerHTML='<p class="empty">予約はありません</p>';return}

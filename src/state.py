@@ -14,6 +14,17 @@ def load() -> dict:
 
 
 def save(state: dict) -> None:
+    old = load().get("reservations")
+    PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if state.get("reservations") != old:
+        publish(state)
+
+
+def publish(state: dict) -> None:
+    import time
+    import notify
+    notify.publish_state(state)
+    state["published_at"] = time.time()
     PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 

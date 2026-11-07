@@ -7,6 +7,7 @@
   python src/main.py cancel <予約番号>
   python src/main.py status          # 現在の予約一覧を通知
   python src/main.py test            # ログインと一覧取得だけ試す
+  python src/main.py poll            # iPhoneから届いた操作を実行（5分おき）
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import notify  # noqa: E402
+import settings  # noqa: E402
 import state as st  # noqa: E402
 import timescar as tc  # noqa: E402
 
@@ -51,7 +53,7 @@ class Session:
         self.page = ctx.new_page()
         self.page.set_default_timeout(30000)
         try:
-            tc.login(self.page, os.environ["TIMES_ID"], os.environ["TIMES_PW"])
+            tc.login(self.page, *settings.credentials())
         except Exception:
             self.__exit__()  # 失敗してもブラウザを必ず閉じる（次の操作が動かなくなるのを防ぐ）
             raise
@@ -121,7 +123,7 @@ def cmd_reserve(args) -> None:
             deadline = (midnight + timedelta(minutes=cfg["open_wait_minutes"])).timestamp()
             while time.time() < midnight.timestamp() - 20:
                 time.sleep(min(30, midnight.timestamp() - 20 - time.time()))
-            tc.login(page, os.environ["TIMES_ID"], os.environ["TIMES_PW"])  # 待機中の切断に備えて再確認
+            tc.login(page, *settings.credentials())  # 待機中の切断に備えて再確認
             tc.wait_until_open(page, CONFIG["stations"]["tier1"][0]["code"], d, deadline)
         number, station, car = None, None, None
         for attempt in range(3):
@@ -291,18 +293,46 @@ def run_commands() -> int:
 
 
 def cmd_poll(args) -> None:
-    if args.check:
-        has = bool(pending_commands())
-        print(f"pending={'true' if has else 'false'}")
-        out = os.environ.get("GITHUB_OUTPUT")
-        if out:
-            with open(out, "a") as f:
-                f.write(f"pending={'true' if has else 'false'}\n")
-        return
     run_commands()
+    # ntfyは12時間でメッセージが消えるので、操作パネル用の一覧を6時間おきに配信し直す
+    state = st.load()
+    if time.time() - state.get("published_at", 0) > 6 * 3600:
+        st.publish(state)
+
+
+LOCK = Path(__file__).resolve().parent.parent / "run.lock"
+
+
+def acquire_lock(wait: bool) -> bool:
+    """同時に2つ動かないようにする。poll は待たずに諦め、それ以外は最大20分待つ"""
+    deadline = time.time() + (20 * 60 if wait else 0)
+    while True:
+        try:
+            fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return True
+        except FileExistsError:
+            if time.time() - LOCK.stat().st_mtime > 60 * 60:  # 1時間以上前のロックは残骸とみなす
+                LOCK.unlink(missing_ok=True)
+                continue
+            if time.time() > deadline:
+                return False
+            time.sleep(10)
+
+
+def _log_to_file() -> None:
+    """タスクスケジューラ（画面なし）で動くときは logs フォルダに記録する"""
+    if sys.stdout is None or not sys.stdout.isatty():
+        logs = Path(__file__).resolve().parent.parent / "logs"
+        logs.mkdir(exist_ok=True)
+        f = open(logs / f"{now():%Y%m%d}.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = sys.stderr = f
+        print(f"\n===== {now():%Y-%m-%d %H:%M:%S} {' '.join(sys.argv[1:])}")
 
 
 def main():
+    _log_to_file()
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("reserve")
@@ -318,9 +348,11 @@ def main():
     c.add_argument("number")
     sub.add_parser("status")
     sub.add_parser("test")
-    pl = sub.add_parser("poll")
-    pl.add_argument("--check", action="store_true")
+    sub.add_parser("poll")
     args = p.parse_args()
+    if not acquire_lock(wait=args.cmd != "poll"):
+        print("別の処理が実行中なのでスキップします")
+        return
     try:
         {
             "reserve": cmd_reserve, "remind": cmd_remind, "auto-cancel": cmd_auto_cancel,
@@ -330,6 +362,8 @@ def main():
     except Exception as e:
         notify.send("タイムズカー：エラー", f"{args.cmd}: {e}"[:500], priority=4, tags=["x"])
         raise
+    finally:
+        LOCK.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

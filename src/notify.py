@@ -1,7 +1,7 @@
 """ntfy でiPhoneへ通知する
 
 iPhoneからの操作は「コマンド用トピック」(NTFY_TOPIC + "-cmd") にメッセージを送る形で受け取る。
-GitHubのトークンは不要。GitHub Actions が5分おきにコマンド用トピックを読みに行って処理する。
+PCのタスクスケジューラが5分おきにコマンド用トピックを読みに行って処理する。
 """
 from __future__ import annotations
 
@@ -9,12 +9,14 @@ import json
 import os
 import urllib.request
 
+import settings
+
 NTFY = "https://ntfy.sh"
 PANEL = "https://kyumac.github.io/timescar-auto-reserve/"
 
 
 def topic() -> str | None:
-    return os.environ.get("NTFY_TOPIC")
+    return settings.ntfy_topic()
 
 
 def cmd_topic() -> str | None:
@@ -75,3 +77,20 @@ def fetch_commands(since: str | None) -> list[dict]:
         lines = res.read().decode("utf-8").splitlines()
     msgs = [json.loads(x) for x in lines if x.strip()]
     return [m for m in msgs if m.get("event") == "message"]
+
+
+def publish_state(state: dict) -> None:
+    """操作パネルが予約一覧を読めるよう、状態を状態用トピックに配信する"""
+    t = topic()
+    if not t:
+        return
+    view = {"reservations": state.get("reservations", {})}
+    req = urllib.request.Request(
+        f"{NTFY}/{t}-state", data=json.dumps(view, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "text/plain; charset=utf-8", "Cache": "yes"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            res.read()
+    except Exception as e:  # 一覧の配信に失敗しても本体の処理は止めない
+        print(f"[state] 配信失敗: {e}")
