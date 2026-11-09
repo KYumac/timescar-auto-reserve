@@ -61,6 +61,13 @@
   <div class="row"><button class="primary" onclick="reserve()">優先順に空きを探して予約</button></div>
 </section>
 
+<section>
+  <h2>ログイン</h2>
+  <p class="empty">PCにログイン画面を開きます。1分ほど待ってからリモートデスクトップで「ログイン」を押してください。</p>
+  <div class="row"><button class="primary" onclick="send('login')">PCにログイン画面を開く</button></div>
+  <div class="row"><button onclick="location.href='https://remotedesktop.google.com/access'">リモートデスクトップを開く</button></div>
+</section>
+
 <details><summary>設定</summary>
   <div class="row"><button onclick="send('test')">接続テスト</button></div>
 </details>
@@ -83,7 +90,7 @@ async function send(cmd){
   if(!topic){document.getElementById("setup").style.display="block";return}
   try{
     const r = await fetch("https://ntfy.sh/"+topic,{method:"POST",body:cmd});
-    toast(r.ok ? "受け付けました。5分以内に処理して通知します（PCが起動している必要があります）" : "失敗しました（"+r.status+"）");
+    toast(r.ok ? "受け付けました。1〜2分で処理して通知します（PCが起動している必要があります）" : "失敗しました（"+r.status+"）");
   }catch(e){toast("送信できませんでした")}
 }
 

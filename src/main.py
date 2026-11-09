@@ -75,9 +75,10 @@ class Session:
             state["login_alerted"] = True
             st.save(state)
             notify.send("タイムズカー：ログインし直してください",
-                        "ログインの有効期限が切れました。PCで「login.bat」をダブルクリックして、"
-                        "ログインボタンを押してください（会員番号とパスワードは入力済みで開きます）。",
-                        priority=5, tags=["key"])
+                        "ログインの有効期限が切れました。\n"
+                        "①「PCにログイン画面を開く」を押す\n"
+                        "②1分ほど待ってリモートデスクトップでPCを開き、「ログイン」ボタンを押す",
+                        actions=notify.login_buttons(), priority=5, tags=["key"])
             raise
         except Exception:
             self.__exit__()
@@ -284,7 +285,17 @@ def cmd_login(args) -> None:
         except Exception as e:
             print(f"自動入力できませんでした（手で入力してください）: {e}")
         print("開いたブラウザで「ログイン」を押してください。マイページが出たら自動で閉じます。")
-        page.wait_for_url("**/view/member/mypage.jsp*", timeout=10 * 60 * 1000)
+        if getattr(args, "remote", False):
+            notify.send("タイムズカー：PCにログイン画面を開きました",
+                        "リモートデスクトップでPCを開き、「ログイン」ボタンを押してください（10分以内）。",
+                        actions=[notify.login_buttons()[-1]], priority=4, tags=["key"])
+        try:
+            page.wait_for_url("**/view/member/mypage.jsp*", timeout=10 * 60 * 1000)
+        except Exception:
+            notify.send("タイムズカー：ログインされませんでした",
+                        "10分以内にログインされなかったので画面を閉じました。もう一度やり直してください。",
+                        actions=notify.login_buttons(), tags=["warning"])
+            raise SystemExit(1)
         page.wait_for_timeout(2000)
     finally:
         s.__exit__()
@@ -327,6 +338,12 @@ def run_commands() -> int:
                 cmd_status(NS())
             elif parts == ["test"]:
                 cmd_test(NS())
+            elif parts == ["login"]:
+                state = st.load()
+                state["cmd_since"] = m["id"]  # 待っている間に二重で開かないよう先に処理済みにする
+                st.save(state)
+                cmd_login(NS(remote=True))
+                continue
             else:
                 print(f"[command] 不明な操作: {parts}")
         except tc.NeedLogin:

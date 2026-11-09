@@ -61,6 +61,16 @@ def _cmd_action(label: str, command: str) -> dict:
     }
 
 
+REMOTE_DESKTOP = "https://remotedesktop.google.com/access"
+
+
+def login_buttons() -> list[dict]:
+    acts = [{"action": "view", "label": "リモートデスクトップを開く", "url": REMOTE_DESKTOP}]
+    if cmd_topic():
+        acts.insert(0, _cmd_action("PCにログイン画面を開く", "login"))
+    return acts
+
+
 def keep_or_cancel_buttons(number: str) -> list[dict]:
     if not cmd_topic():
         return []

@@ -52,8 +52,9 @@ Reg "3_自動キャンセル（土日朝）" @(
   (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday,Sunday -At "08:05"),
   (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday,Sunday -At "08:25"),
   (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday,Sunday -At "08:45")) "auto-cancel"
-$t = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
-Reg "4_iPhoneからの操作（5分おき）" $t "poll"
+Get-ScheduledTask -TaskPath "\Timescar\" -ErrorAction SilentlyContinue | Where-Object TaskName -like "4_*" | Unregister-ScheduledTask -Confirm:$false
+$t = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+Reg "4_iPhoneからの操作（1分おき）" $t "poll"
 try {
   powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 2>$null
   powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 2>$null
