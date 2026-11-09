@@ -44,23 +44,48 @@ def fmt_day(d: date) -> str:
     return f"{d.month}/{d.day}（{WD[d.weekday()]}）"
 
 
+PROFILE = Path(__file__).resolve().parent.parent / "browser-profile"
+
+
 class Session:
-    def __enter__(self):
+    """ログイン状態を保存したブラウザで操作する（ログインそのものは人が login.bat で行う）"""
+
+    def __init__(self, headless: bool = True):
+        self.headless = headless
+
+    def open(self):
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
-        self.browser = self._pw.chromium.launch(headless=True)
-        ctx = self.browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo")
-        self.page = ctx.new_page()
+        self.ctx = self._pw.chromium.launch_persistent_context(
+            str(PROFILE), headless=self.headless, locale="ja-JP", timezone_id="Asia/Tokyo",
+        )
+        self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.set_default_timeout(30000)
-        try:
-            tc.login(self.page, *settings.credentials())
-        except Exception:
-            self.__exit__()  # 失敗してもブラウザを必ず閉じる（次の操作が動かなくなるのを防ぐ）
-            raise
         return self.page
 
+    def __enter__(self):
+        page = self.open()
+        try:
+            tc.ensure_logged_in(page)
+        except tc.NeedLogin:
+            self.__exit__()
+            state = st.load()
+            if state.get("login_alerted"):
+                raise  # 同じ切れ方で何度も通知しない
+            state["login_alerted"] = True
+            st.save(state)
+            notify.send("タイムズカー：ログインし直してください",
+                        "ログインの有効期限が切れました。PCで「login.bat」をダブルクリックして、"
+                        "ログインボタンを押してください（会員番号とパスワードは入力済みで開きます）。",
+                        priority=5, tags=["key"])
+            raise
+        except Exception:
+            self.__exit__()
+            raise
+        return page
+
     def __exit__(self, *exc):
-        self.browser.close()
+        self.ctx.close()
         self._pw.stop()
 
 
@@ -123,7 +148,7 @@ def cmd_reserve(args) -> None:
             deadline = (midnight + timedelta(minutes=cfg["open_wait_minutes"])).timestamp()
             while time.time() < midnight.timestamp() - 20:
                 time.sleep(min(30, midnight.timestamp() - 20 - time.time()))
-            tc.login(page, *settings.credentials())  # 待機中の切断に備えて再確認
+            tc.ensure_logged_in(page)  # 待機中に切れていないか再確認
             tc.wait_until_open(page, CONFIG["stations"]["tier1"][0]["code"], d, deadline)
         number, station, car = None, None, None
         for attempt in range(3):
@@ -249,6 +274,27 @@ def cmd_status(args) -> None:
     notify.send("タイムズカー：予約一覧", "\n".join(lines))
 
 
+def cmd_login(args) -> None:
+    """画面ありのブラウザを開き、人がログインボタンを押すのを待つ"""
+    s = Session(headless=False)
+    page = s.open()
+    try:
+        try:
+            tc.prefill_login(page, *settings.credentials())
+        except Exception as e:
+            print(f"自動入力できませんでした（手で入力してください）: {e}")
+        print("開いたブラウザで「ログイン」を押してください。マイページが出たら自動で閉じます。")
+        page.wait_for_url("**/view/member/mypage.jsp*", timeout=10 * 60 * 1000)
+        page.wait_for_timeout(2000)
+    finally:
+        s.__exit__()
+    state = st.load()
+    state["login_ok_at"] = time.time()
+    state["login_alerted"] = False
+    st.save(state)
+    notify.send("タイムズカー：ログインしました", "ログイン状態を保存しました。", tags=["white_check_mark"])
+
+
 def cmd_test(args) -> None:
     with Session() as page:
         live = tc.list_reservations(page)
@@ -283,6 +329,8 @@ def run_commands() -> int:
                 cmd_test(NS())
             else:
                 print(f"[command] 不明な操作: {parts}")
+        except tc.NeedLogin:
+            return 0  # ログインし直すまで操作は保留（処理済みにしない）
         except Exception as e:  # 1件失敗しても残りは続ける
             notify.send("タイムズカー：エラー", f"{' '.join(parts)}: {e}"[:500], priority=4, tags=["x"])
         # 処理済みの位置を記録（同じ操作を二重に実行しない）
@@ -294,6 +342,16 @@ def run_commands() -> int:
 
 def cmd_poll(args) -> None:
     run_commands()
+    # 30分おきにマイページを開いて、ログイン状態が生きているか確かめる（切れていたら通知）
+    state = st.load()
+    if time.time() - state.get("checked_at", 0) > 30 * 60:
+        state["checked_at"] = time.time()
+        st.save(state)
+        try:
+            with Session():
+                pass
+        except tc.NeedLogin:
+            pass
     # ntfyは12時間でメッセージが消えるので、操作パネル用の一覧を6時間おきに配信し直す
     state = st.load()
     if time.time() - state.get("published_at", 0) > 6 * 3600:
@@ -348,6 +406,7 @@ def main():
     c.add_argument("number")
     sub.add_parser("status")
     sub.add_parser("test")
+    sub.add_parser("login")
     sub.add_parser("poll")
     args = p.parse_args()
     if not acquire_lock(wait=args.cmd != "poll"):
@@ -357,8 +416,11 @@ def main():
         {
             "reserve": cmd_reserve, "remind": cmd_remind, "auto-cancel": cmd_auto_cancel,
             "keep": cmd_keep, "cancel": cmd_cancel, "status": cmd_status, "test": cmd_test,
-            "poll": cmd_poll,
+            "poll": cmd_poll, "login": cmd_login,
         }[args.cmd](args)
+    except tc.NeedLogin:
+        print("ログインが切れているので中断しました")
+        sys.exit(2)
     except Exception as e:
         notify.send("タイムズカー：エラー", f"{args.cmd}: {e}"[:500], priority=4, tags=["x"])
         raise

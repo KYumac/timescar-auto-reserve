@@ -5,3 +5,5 @@ settings.json
 state.json
 logs/
 run.lock
+
+browser-profile/

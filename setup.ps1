@@ -60,7 +60,15 @@ try {
   powercfg /SETACTIVE SCHEME_CURRENT 2>$null
 } catch {}
 
-Step "5/5 接続テスト"
+Step "5/5 ログイン（ここだけ手で行います）"
+Write-Host "ブラウザが開きます。会員番号とパスワードは入力済みなので、「ログイン」ボタンを押してください。"
+Write-Host "マイページが表示されたら、ブラウザは自動で閉じます。"
+& $Python "$Root\src\main.py" login
+if ($LASTEXITCODE -ne 0) {
+  Write-Host ""
+  Write-Host "ログインできませんでした。この画面をスクリーンショットして Claude に送ってください。" -ForegroundColor Red
+  exit 1
+}
 & $Python "$Root\src\main.py" test
 if ($LASTEXITCODE -eq 0) {
   Write-Host ""

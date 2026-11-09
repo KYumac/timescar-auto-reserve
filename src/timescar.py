@@ -45,43 +45,29 @@ class Reservation:
 
 # ---------------------------------------------------------------- ログイン
 
-def login(page: Page, member_id: str, password: str) -> None:
+class NeedLogin(TimesError):
+    """ログインが切れている（人がログインし直す必要がある）"""
+
+
+def ensure_logged_in(page: Page) -> None:
+    """保存済みのログイン状態が生きているか確認する。切れていれば NeedLogin"""
+    page.goto(MYPAGE, wait_until="domcontentloaded")
+    if "Access Denied" in page.title():
+        raise TimesError("タイムズのサイトにアクセスを拒否されました")
+    if "mypage.jsp" in page.url and "timesclub" not in page.url:
+        return
+    raise NeedLogin("ログインが切れています")
+
+
+def prefill_login(page: Page, member_id: str, password: str) -> None:
+    """ログイン画面に会員番号とパスワードを入れておく（ログインボタンは人が押す）"""
     page.goto(MYPAGE, wait_until="domcontentloaded")
     if "mypage.jsp" in page.url and "timesclub" not in page.url:
-        return  # すでにログイン済み
-
-    if "Access Denied" in page.title():
-        raise TimesError("タイムズのサイトにアクセスを拒否されました（この実行環境からは使えません）")
-
+        return
     digits = re.sub(r"\D", "", member_id)
-    text_inputs = page.locator("input[type=text]:visible, input[type=tel]:visible, input[type=number]:visible")
-    n = text_inputs.count()
-    if n == 0:
-        raise TimesError("ログイン画面の会員番号欄が見つかりません")
-
-    # 会員番号は複数の欄に分かれているので maxlength に合わせて分配する
-    pos = 0
-    for i in range(n):
-        el = text_inputs.nth(i)
-        ml = el.get_attribute("maxlength")
-        size = int(ml) if ml and ml.isdigit() else len(digits) - pos
-        el.fill(digits[pos:pos + size])
-        pos += size
-        if pos >= len(digits):
-            break
-
-    page.locator("input[type=password]:visible").first.fill(password)
-
-    submit = page.locator(
-        "input[type=image][alt*='ログイン'], input[type=submit][value*='ログイン'], "
-        "button:has-text('ログイン'), a:has-text('ログイン')"
-    ).first
-    with page.expect_navigation(wait_until="domcontentloaded", timeout=30000):
-        submit.click()
-
-    if "mypage.jsp" not in page.url:
-        body = page.inner_text("body")[:300]
-        raise TimesError(f"ログインに失敗しました: {page.url} / {body}")
+    page.fill("#cardNo1", digits[:4])
+    page.fill("#cardNo2", digits[4:])
+    page.fill("#tpPassword", password)
 
 
 # ---------------------------------------------------------------- 予約入力
